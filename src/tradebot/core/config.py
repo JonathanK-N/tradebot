@@ -124,12 +124,22 @@ class LiveConfig(BaseModel):
     heartbeat_timeout_seconds: float = 60.0
     magic_number: int = 20260926
     state_dir: str = "var/state"
+    # file : un seul hôte avec disque partagé ; redis : services séparés (Railway)
+    state_backend: str = "file"
+    bridge_wait_seconds: float = 30.0  # attente entre deux tentatives si le pont est absent
 
     @field_validator("mode")
     @classmethod
     def _mode(cls, v: str) -> str:
         if v not in {"paper", "mt5", "remote"}:
             raise ValueError("mode doit être paper, mt5 ou remote")
+        return v
+
+    @field_validator("state_backend")
+    @classmethod
+    def _backend(cls, v: str) -> str:
+        if v not in {"file", "redis"}:
+            raise ValueError("state_backend doit être file ou redis")
         return v
 
 
@@ -170,6 +180,7 @@ class Secrets(BaseModel):
     def from_env(cls, env: dict[str, str] | None = None) -> Secrets:
         e = dict(os.environ if env is None else env)
         ids = [int(x) for x in e.get("TELEGRAM_ALLOWED_CHAT_IDS", "").split(",") if x.strip()]
+        db = e.get("DATABASE_URL")
         login = e.get("MT5_LOGIN")
         return cls(
             mt5_login=int(login) if login else None,
@@ -180,10 +191,19 @@ class Secrets(BaseModel):
             telegram_allowed_chat_ids=ids,
             totp_secret=e.get("TOTP_SECRET"),
             api_token=e.get("API_TOKEN"),
-            database_url=e.get("DATABASE_URL"),
+            database_url=normalize_database_url(db) if db else None,
             redis_url=e.get("REDIS_URL"),
             healthcheck_url=e.get("HEALTHCHECK_URL"),
         )
+
+
+def normalize_database_url(url: str) -> str:
+    """Railway / Heroku fournissent ``postgres://`` ou ``postgresql://`` ; SQLAlchemy a
+    besoin du pilote explicite (psycopg 3) : ``postgresql+psycopg://``."""
+    for prefix in ("postgres://", "postgresql://"):
+        if url.startswith(prefix):
+            return "postgresql+psycopg://" + url[len(prefix):]
+    return url
 
 
 def load_dotenv(path: str | Path = ".env") -> None:
@@ -199,9 +219,28 @@ def load_dotenv(path: str | Path = ".env") -> None:
         os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
 
+def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    out = dict(base)
+    for k, v in override.items():
+        out[k] = _deep_merge(out[k], v) if isinstance(v, dict) and isinstance(out.get(k), dict) else v
+    return out
+
+
+def _read_yaml(path: Path, depth: int = 0) -> dict[str, Any]:
+    """Lit un YAML ; ``extends: autre.yaml`` hérite d'un fichier de base (chemin relatif)."""
+    if depth > 5:
+        raise ValueError("chaîne « extends » trop longue (boucle ?)")
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    parent = data.pop("extends", None)
+    if parent:
+        data = _deep_merge(_read_yaml(path.parent / parent, depth + 1), data)
+    return data
+
+
 def load_config(path: str | Path | None = None) -> AppConfig:
     path = Path(path or os.environ.get("TRADEBOT_CONFIG", "config/default.yaml"))
-    data: dict[str, Any] = {}
-    if path.exists():
-        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    return AppConfig.model_validate(data)
+    if not path.exists():
+        if path.name != "default.yaml":  # un fichier explicitement demandé doit exister
+            raise FileNotFoundError(f"fichier de configuration introuvable : {path}")
+        return AppConfig()
+    return AppConfig.model_validate(_read_yaml(path))

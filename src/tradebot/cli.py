@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -177,9 +178,9 @@ def cmd_montecarlo(a, cfg: AppConfig) -> None:
 
 
 def cmd_live(a, cfg: AppConfig, secrets: Secrets) -> None:
-    from tradebot.live.factory import build_runner
+    from tradebot.live.factory import build_runner_with_retry
 
-    build_runner(cfg, secrets).run_forever()
+    build_runner_with_retry(cfg, secrets).run_forever()
 
 
 def cmd_bridge(a, cfg: AppConfig, secrets: Secrets) -> None:
@@ -202,15 +203,13 @@ def cmd_bridge(a, cfg: AppConfig, secrets: Secrets) -> None:
 def cmd_bot(a, cfg: AppConfig, secrets: Secrets) -> None:
     from tradebot.alerts.telegram import CommandHandler, TelegramClient, run_bot
     from tradebot.journal.store import SqlJournal
-    from tradebot.live.status import StatusFile
-    from tradebot.risk.killswitch import ControlFile
+    from tradebot.live.factory import state_stores
 
     if not secrets.telegram_bot_token or not secrets.telegram_allowed_chat_ids:
         raise SystemExit("TELEGRAM_BOT_TOKEN et TELEGRAM_ALLOWED_CHAT_IDS requis")
-    state = Path(cfg.live.state_dir)
     journal = SqlJournal(secrets.database_url or cfg.journal_url)
-    handler = CommandHandler(ControlFile(state / "control.json"), StatusFile(state / "status.json"),
-                             secrets.telegram_allowed_chat_ids, secrets.totp_secret,
+    control, status = state_stores(cfg, secrets)
+    handler = CommandHandler(control, status, secrets.telegram_allowed_chat_ids, secrets.totp_secret,
                              trades_provider=journal.recent_trades)
     run_bot(TelegramClient(secrets.telegram_bot_token), handler)
 
@@ -231,7 +230,10 @@ def cmd_api(a, cfg: AppConfig, secrets: Secrets) -> None:
 
     from tradebot.api.app import create_app
 
-    uvicorn.run(create_app(cfg, secrets), host=a.host, port=a.port, proxy_headers=True)
+    # Railway (et la plupart des PaaS) imposent le port via la variable PORT
+    port = a.port if a.port is not None else int(os.environ.get("PORT", "8000"))
+    uvicorn.run(create_app(cfg, secrets), host=a.host, port=port, proxy_headers=True,
+                forwarded_allow_ips="*")
 
 
 def cmd_totp_setup(a, cfg: AppConfig) -> None:
@@ -312,7 +314,7 @@ def build_parser() -> argparse.ArgumentParser:
     add("telegram-whoami", cmd_telegram_whoami, "afficher ton chat_id Telegram", True)
     sp = add("api", cmd_api, "API + dashboard PWA", True)
     sp.add_argument("--host", default="127.0.0.1")
-    sp.add_argument("--port", type=int, default=8000)
+    sp.add_argument("--port", type=int, default=None, help="défaut : $PORT sinon 8000")
     add("totp-setup", cmd_totp_setup, "générer un secret TOTP")
     add("config-check", cmd_config_check, "afficher la config effective et les secrets présents")
     return p

@@ -1,7 +1,8 @@
 """Drapeaux de contrôle partagés entre processus (bot Telegram, API, moteur live).
 
-Mécanisme volontairement simple : un fichier JSON sur un volume partagé. Aucun
-serveur à maintenir en vie pour que le kill switch fonctionne.
+Stockage : un fichier JSON sur un volume partagé (``ControlFile``, VPS unique) ou
+Redis (``ControlStore`` + ``RedisKV``, plateformes sans disque partagé comme Railway).
+Si le stockage est illisible ou injoignable, la lecture renvoie PAUSE (fail-closed).
 
 - ``pause``  : plus de NOUVELLES entrées ; les positions ouvertes gardent leurs SL/TP.
 - ``kill``   : plus de nouvelles entrées ET fermeture immédiate de toutes les positions.
@@ -15,10 +16,11 @@ elle ne dépend d'aucune ligne de ce code.
 from __future__ import annotations
 
 import json
-import os
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+
+from tradebot.core.kv import KV, FileKV, StateUnavailable
 
 
 @dataclass(slots=True)
@@ -31,24 +33,27 @@ class ControlFlags:
     reset_halt_requested: bool = False
 
 
-class ControlFile:
-    def __init__(self, path: str | Path) -> None:
-        self.path = Path(path)
+class ControlStore:
+    def __init__(self, kv: KV, key: str = "control") -> None:
+        self.kv = kv
+        self.key = key
 
     def read(self) -> ControlFlags:
         try:
-            return ControlFlags(**json.loads(self.path.read_text(encoding="utf-8")))
-        except FileNotFoundError:
+            raw = self.kv.get(self.key)
+        except StateUnavailable as e:
+            # Stockage injoignable : PAUSE par sécurité (fail-closed).
+            return ControlFlags(paused=True, reason=f"stockage de contrôle injoignable : {e}")
+        if raw is None:
             return ControlFlags()
+        try:
+            return ControlFlags(**json.loads(raw))
         except (json.JSONDecodeError, TypeError):
-            # Fichier corrompu : on se met en PAUSE par sécurité (fail-closed).
-            return ControlFlags(paused=True, reason="fichier de contrôle illisible")
+            return ControlFlags(paused=True, reason="état de contrôle illisible")
 
     def _write(self, flags: ControlFlags) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(asdict(flags), indent=2), encoding="utf-8")
-        os.replace(tmp, self.path)
+        """Lève ``StateUnavailable`` : le bot / l'API doivent signaler l'échec à l'utilisateur."""
+        self.kv.set(self.key, json.dumps(asdict(flags), indent=2))
 
     def _now(self) -> str:
         return datetime.now(UTC).isoformat()
@@ -88,3 +93,12 @@ class ControlFile:
         f = ControlFlags(reason="reprise manuelle", updated_at=self._now(), updated_by=by)
         self._write(f)
         return f
+
+
+class ControlFile(ControlStore):
+    """Variante fichier (compatibilité) : ``ControlFile("var/state/control.json")``."""
+
+    def __init__(self, path: str | Path) -> None:
+        path = Path(path)
+        super().__init__(FileKV(path.parent), path.stem)
+        self.path = path

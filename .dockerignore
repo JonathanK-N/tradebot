@@ -1,0 +1,21 @@
+# Contexte de build minimal : jamais de secrets ni de données dans l'image
+.git
+.github
+.venv
+.env
+.env.*
+!.env.example
+data/
+var/
+reports/
+node_modules/
+.railway/
+docs/
+tests/
+scripts/
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.ruff_cache
+.mypy_cache
+.hypothesis

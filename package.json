@@ -1,0 +1,16 @@
+{
+  "name": "tradebot-infra",
+  "private": true,
+  "type": "module",
+  "description": "Outillage de l'infrastructure Railway (.railway/railway.ts). Le code applicatif est en Python.",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test:railway": "node --experimental-strip-types --no-warnings tests/railway/check.ts"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.4",
+    "railway": "3.11.0",
+    "typescript": "5.9.3"
+  }
+}

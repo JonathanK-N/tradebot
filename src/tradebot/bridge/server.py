@@ -49,7 +49,7 @@ class BridgeServer:
         """Historique pour le préchauffage des indicateurs au démarrage du cœur
         (EMA200 H1 = ~9 jours ; 15 000 M1 ≈ 11 jours de marché)."""
         bars = self.a.completed_m1_bars(count)
-        self.t.set("history", P.dumps("history", [P.encode(b) for b in bars], at=self.clock()))
+        self.t.set("history", P.dumps("history", P.encode_bars(bars), at=self.clock()))
 
     def core_alive(self) -> bool:
         hb = self.t.get("core_hb")
@@ -100,23 +100,37 @@ class BridgeServer:
             self.t.push("trades", P.dumps("trade", P.encode(tr)))
         self.t.set("bridge_hb", str(self.clock()), ttl_s=600)
 
+    def _serve(self, raw: str) -> None:
+        msg = P.loads(raw)
+        try:
+            res = self.handle(msg)
+        except Exception as e:  # le pont ne doit jamais mourir sur une commande
+            log.exception("bridge_command_error")
+            res = OrderResult(False, "", f"erreur pont : {e}")
+        self.t.push(f"reply:{msg['id']}", P.dumps("result", P.encode_result(res)))
+
+    def drain_commands(self) -> int:
+        """Traite TOUTES les commandes déjà en file, sans attendre. Appelé avant et entre
+        les tâches de publication : un /kill ne doit jamais attendre derrière elles."""
+        n = 0
+        while (raw := self.t.pop("cmd")) is not None:
+            self._serve(raw)
+            n += 1
+        return n
+
     def step(self, cmd_wait_s: float = 1.0) -> None:
+        self.drain_commands()
+        self.publish_state()
+        self.drain_commands()
         if self.clock() >= self._next_history:
             self.publish_history()
             self._next_history = self.clock() + 1800
-        self.publish_state()
         deadline = time.monotonic() + cmd_wait_s
         while (remaining := deadline - time.monotonic()) > 0:
             raw = self.t.pop("cmd", timeout=remaining)
             if raw is None:
                 break
-            msg = P.loads(raw)
-            try:
-                res = self.handle(msg)
-            except Exception as e:  # le pont ne doit jamais mourir sur une commande
-                log.exception("bridge_command_error")
-                res = OrderResult(False, "", f"erreur pont : {e}")
-            self.t.push(f"reply:{msg['id']}", P.dumps("result", P.encode_result(res)))
+            self._serve(raw)
 
     def run_forever(self, cycle_s: float = 2.0) -> None:  # pragma: no cover - boucle infinie
         log.info("bridge_started", symbol=self.a.symbol, guard=self.guard)

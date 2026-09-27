@@ -20,3 +20,6 @@ var/
 reports/
 *.db
 *.log
+
+# Outillage Node (infrastructure Railway)
+node_modules/

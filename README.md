@@ -36,12 +36,14 @@ données changent.
 ```bash
 uv sync                          # installe Python 3.12 + dépendances
 uv run pytest                    # suite de tests complète
+npm ci && npm run test:railway   # test de l'infrastructure Railway (Node 22)
 uv run tradebot data-synthetic   # données ALÉATOIRES pour essayer
 uv run tradebot backtest --symbol SYNTH --strategy asian_breakout
 ```
 
 ## Documentation
-- [docs/DEPLOIEMENT.md](docs/DEPLOIEMENT.md) : mise en production pas à pas, depuis le téléphone
+- [docs/DEPLOIEMENT.md](docs/DEPLOIEMENT.md) : mise en production sur VPS, pas à pas, depuis le téléphone
+- [docs/RAILWAY.md](docs/RAILWAY.md) : alternative hébergée (Railway) : fichiers, risques, tests
 - [docs/RUNBOOK.md](docs/RUNBOOK.md) : que faire en cas d'incident
 - [docs/ROADMAP.md](docs/ROADMAP.md) : avancement et critères go/no-go
 - [docs/hypotheses/](docs/hypotheses/) : stratégies pré-enregistrées

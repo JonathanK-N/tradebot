@@ -15,7 +15,7 @@ def client(tmp_path):
     secret = pyotp.random_base32()
     cfg = AppConfig(live=LiveConfig(state_dir=str(tmp_path)))
     app = create_app(cfg, Secrets(api_token=TOKEN, totp_secret=secret),
-                     journal=SqlJournal(f"sqlite:///{tmp_path / 'j.db'}"))
+                     journal=SqlJournal(f"sqlite:///{tmp_path / 'j.db'}"))  # backend fichier par défaut
     return TestClient(app), ControlFile(tmp_path / "control.json"), secret
 
 

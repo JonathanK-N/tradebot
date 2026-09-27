@@ -9,8 +9,24 @@ permissions:
 
 jobs:
   test:
+    name: Tests Python (+ vrais PostgreSQL et Redis)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_USER: ci, POSTGRES_PASSWORD: ci, POSTGRES_DB: ci }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ci" --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_POSTGRES_URL: postgresql://ci:ci@localhost:5432/ci   # format Railway, normalisé par le code
+      TEST_REDIS_URL: redis://localhost:6379/0
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
@@ -20,10 +36,56 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - uses: astral-sh/setup-uv@v6
       - run: uv python install 3.12
-      - run: uv sync --frozen
+      - run: uv sync --frozen --extra postgres --extra crypto
       - name: Lint
         run: uv run ruff check src tests
-      - name: Config valide (plafonds de risque codés en dur)
-        run: uv run tradebot config-check > /dev/null
-      - name: Tests (risque, anti look-ahead, simulateur, MT5 simulé, pont, API)
-        run: uv run pytest -q
+      - name: Configs valides (plafonds de risque codés en dur)
+        run: |
+          uv run tradebot config-check > /dev/null
+          uv run tradebot --config config/railway.yaml config-check > /dev/null
+      - name: Tests
+        run: uv run pytest -q -rs
+
+  railway-config:
+    name: Infrastructure Railway (.railway/railway.ts)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+      - name: Typage strict avec le SDK officiel
+        run: npm run typecheck
+      - name: Exécution et vérification du programme d'infrastructure
+        run: node --experimental-strip-types --no-warnings --test tests/railway/check.ts
+
+  docker:
+    name: Image Docker (build + démarrage comme sur Railway)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: docker build -t tradebot:ci .
+      - name: La config Railway est valide dans l'image
+        run: docker run --rm tradebot:ci --config config/railway.yaml config-check > /dev/null
+      - name: L'image tourne en non-root
+        run: test "$(docker run --rm --entrypoint id tradebot:ci -u)" != "0"
+      - name: Démarrage de l'API comme Railway (commande qui remplace l'ENTRYPOINT, port via $PORT)
+        run: |
+          docker run -d --name api -p 8080:8080 \
+            -e PORT=8080 -e API_TOKEN=ci-token-ci-token-ci-token-ci \
+            -e DATABASE_URL=sqlite:////tmp/journal.db \
+            --entrypoint tradebot tradebot:ci api --host 0.0.0.0
+          for i in $(seq 1 30); do curl -fsS http://127.0.0.1:8080/livez && break; sleep 1; done
+          curl -fsS http://127.0.0.1:8080/livez
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/api/status)" = "401"
+          curl -fsS -H "Authorization: Bearer ci-token-ci-token-ci-token-ci" http://127.0.0.1:8080/api/status
+      - name: Logs en cas d'échec
+        if: failure()
+        run: docker logs api || true
+      - name: Le bot refuse de démarrer sans secrets (erreur explicite, pas de boucle muette)
+        run: |
+          out=$(docker run --rm --entrypoint tradebot tradebot:ci bot 2>&1 || true)
+          echo "$out" | grep -q "TELEGRAM_BOT_TOKEN"

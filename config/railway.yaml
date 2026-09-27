@@ -1,0 +1,14 @@
+# Configuration pour Railway : hérite de default.yaml et ne change que le déploiement.
+# Sélectionnée par la variable TRADEBOT_CONFIG=config/railway.yaml (voir .railway/railway.ts).
+extends: default.yaml
+
+# Tant que ce n'est pas « live », le verrou RealMoneyLocked refuse tout compte réel.
+environment: railway-demo
+
+live:
+  mode: remote            # ordres et prix via le pont MT5 (VPS Windows) à travers Redis
+  state_backend: redis    # les services Railway ne partagent pas de disque
+  state_dir: /app/var/state   # volume du service « live » : état du risque persistant
+  bridge_wait_seconds: 30
+
+data_dir: /app/var/data

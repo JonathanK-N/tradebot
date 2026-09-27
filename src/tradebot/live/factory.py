@@ -10,6 +10,8 @@ réunies :
 from __future__ import annotations
 
 import os
+import time
+from collections.abc import Callable
 from pathlib import Path
 
 from tradebot.alerts.healthcheck import Healthcheck
@@ -17,18 +19,21 @@ from tradebot.alerts.telegram import TelegramClient, TelegramNotifier
 from tradebot.backtest.runner import instrument_from
 from tradebot.core.config import AppConfig, Secrets
 from tradebot.core.engine import NullNotifier, TradingEngine
+from tradebot.core.kv import FileKV, RedisKV
+from tradebot.core.logging import get_logger
 from tradebot.execution.sim import SimBroker
 from tradebot.fundamental.calendar import EventCalendar
 from tradebot.fundamental.forexfactory import fetch_ff_week
 from tradebot.journal.store import SqlJournal
 from tradebot.live.runner import AdapterFeed, LiveRunner
-from tradebot.live.status import StatusFile
-from tradebot.risk.killswitch import ControlFile
+from tradebot.live.status import StatusStore
+from tradebot.risk.killswitch import ControlStore
 from tradebot.risk.manager import RiskManager
 from tradebot.risk.state import StateStore
 from tradebot.strategy.registry import build_strategy
 
 REAL_MONEY_TOKEN = "oui-j-ai-valide-la-demo"
+log = get_logger(__name__)
 
 
 class RealMoneyLocked(RuntimeError):
@@ -43,6 +48,17 @@ def assert_real_money_allowed(cfg: AppConfig, is_demo: bool) -> None:
             "Compte RÉEL détecté mais non autorisé. Il faut environment: live dans le YAML ET "
             f"TRADEBOT_ALLOW_REAL_MONEY={REAL_MONEY_TOKEN}. As-tu validé 4 à 8 semaines de démo ?"
         )
+
+
+def state_stores(cfg: AppConfig, secrets: Secrets) -> tuple[ControlStore, StatusStore]:
+    """Stockage partagé du contrôle (pause/kill) et du statut, selon ``live.state_backend``."""
+    if cfg.live.state_backend == "redis":
+        if not secrets.redis_url:
+            raise RuntimeError("state_backend=redis mais REDIS_URL est absent")
+        kv = RedisKV(secrets.redis_url)
+    else:
+        kv = FileKV(cfg.live.state_dir)
+    return ControlStore(kv, "control"), StatusStore(kv, "status")
 
 
 def build_notifier(secrets: Secrets):
@@ -93,11 +109,38 @@ def build_runner(cfg: AppConfig, secrets: Secrets, warmup_bars: int = 20_000) ->
     equity0 = broker.account().equity if mode != "paper" else cfg.account.initial_balance
     risk = RiskManager(cfg.risk, inst, StateStore(state / "risk_state.json"), equity0)
     calendar = EventCalendar(cfg.news, require_fresh=True)
-    control = ControlFile(state / "control.json")
+    control, status = state_stores(cfg, secrets)
     strategy = build_strategy(cfg.strategy.name, inst.symbol, cfg.strategy.params)
     engine = TradingEngine(strategy, risk, broker, calendar, journal, control=control, notifier=notifier,
                            extra_spread=0.0 if mode != "paper" else cfg.costs.extra_spread)
     engine.warmup(history)
-    return LiveRunner(cfg, engine, feed, calendar, StatusFile(state / "status.json"), notifier,
+    return LiveRunner(cfg, engine, feed, calendar, status, notifier,
                       health=Healthcheck(secrets.healthcheck_url), calendar_fetcher=fetch_ff_week,
                       heartbeat=heartbeat, bridge_alive=bridge_alive)
+
+
+def build_runner_with_retry(cfg: AppConfig, secrets: Secrets, *, sleep: Callable[[float], None] = time.sleep,
+                            max_attempts: int | None = None, builder=build_runner) -> LiveRunner:
+    """Attend le pont MT5 / le terminal au lieu de planter.
+
+    Sur Railway, un service qui s'arrête en erreur n'est redémarré que 10 fois : si le
+    moteur démarre avant le pont Windows (cas normal), il doit PATIENTER, pas mourir.
+    Les erreurs de configuration (verrou compte réel, secrets manquants) restent fatales.
+    """
+    notifier = build_notifier(secrets)
+    attempt = 0
+    while True:
+        attempt += 1
+        try:
+            return builder(cfg, secrets)
+        except (RealMoneyLocked, ValueError):
+            raise
+        except (ConnectionError, TimeoutError, OSError, RuntimeError) as e:
+            if isinstance(e, RuntimeError) and "requis" in str(e):
+                raise  # secret manquant : inutile de réessayer
+            log.warning("live_waiting_for_broker", attempt=attempt, error=str(e))
+            if attempt == 1:
+                notifier.send("critical", f"⏳ Moteur en attente du pont MT5 / broker : {e}")
+            if max_attempts is not None and attempt >= max_attempts:
+                raise
+            sleep(cfg.live.bridge_wait_seconds)

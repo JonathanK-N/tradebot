@@ -22,9 +22,10 @@ from typing import Any
 import httpx
 import pyotp
 
+from tradebot.core.kv import StateUnavailable
 from tradebot.core.logging import get_logger
-from tradebot.live.status import StatusFile
-from tradebot.risk.killswitch import ControlFile
+from tradebot.live.status import StatusStore
+from tradebot.risk.killswitch import ControlStore
 
 log = get_logger(__name__)
 LEVELS = {"info": 1, "signal": 2, "critical": 3}
@@ -79,7 +80,7 @@ def _fmt_positions(positions: list[dict]) -> str:
 
 
 class CommandHandler:
-    def __init__(self, control: ControlFile, status: StatusFile, allowed_ids: list[int],
+    def __init__(self, control: ControlStore, status: StatusStore, allowed_ids: list[int],
                  totp_secret: str | None, *,
                  trades_provider: Callable[[int], list[dict]] | None = None) -> None:
         self.control = control
@@ -92,6 +93,14 @@ class CommandHandler:
         return bool(self.totp and args and self.totp.verify(args[0], valid_window=1))
 
     def handle(self, chat_id: int, text: str) -> str | None:
+        try:
+            return self._handle(chat_id, text)
+        except StateUnavailable as e:
+            log.error("telegram_state_unavailable", error=str(e))
+            return ("🚨 Stockage de contrôle injoignable : commande NON appliquée.\n"
+                    "Si c'est urgent, ferme les positions depuis l'app MT5.")
+
+    def _handle(self, chat_id: int, text: str) -> str | None:
         if chat_id not in self.allowed:
             log.warning("telegram_unauthorized", chat_id=chat_id)
             return None

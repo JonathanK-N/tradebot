@@ -56,6 +56,15 @@ def loads(raw: str | bytes) -> dict[str, Any]:
     return msg
 
 
+def encode_bars(bars: list[Bar]) -> list[list[Any]]:
+    """Format compact (lignes) pour l'historique : ~10× plus rapide que ``encode`` par bougie."""
+    return [[b.ts.isoformat(), b.open, b.high, b.low, b.close, b.spread, b.volume] for b in bars]
+
+
+def decode_bars(rows: list[list[Any]]) -> list[Bar]:
+    return [Bar(datetime.fromisoformat(r[0]), *r[1:]) for r in rows]
+
+
 def encode_result(r: OrderResult) -> dict[str, Any]:
     return {"ok": r.ok, "client_order_id": r.client_order_id, "message": r.message,
             "pending": r.pending, "retryable": r.retryable,

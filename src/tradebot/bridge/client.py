@@ -82,7 +82,7 @@ class RemoteFeed:
         raw = self.t.get("history")
         if raw is None:
             raise BridgeUnavailable("historique non publié : le pont MT5 tourne-t-il ?")
-        return [P.decode(Bar, b) for b in P.loads(raw)["payload"]]
+        return P.decode_bars(P.loads(raw)["payload"])
 
     def poll(self) -> list[Bar]:
         out = []

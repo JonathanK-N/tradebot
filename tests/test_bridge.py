@@ -98,3 +98,31 @@ def test_no_reply_is_retryable(setup):
     client = RemoteBroker(t, reply_timeout_s=0.2)
     r = client.submit(intent())
     assert not r.ok and r.retryable
+
+
+def test_kill_is_not_delayed_by_slow_history(setup, monkeypatch):
+    """Régression : une commande en file est servie AVANT les tâches de publication lentes."""
+    fake, _t, server, client = setup
+    client.heartbeat()
+    th = serve_once(server)
+    client.submit(intent())
+    th.join()
+    # NB : la fixture neutralise time.sleep ; on attend donc avec un Event (vraie attente)
+    monkeypatch.setattr(server, "publish_history", lambda *a, **k: threading.Event().wait(5))
+    server._next_history = 0.0  # publication d'historique due au prochain cycle
+    start = time.monotonic()
+    th = threading.Thread(target=server.step, kwargs={"cmd_wait_s": 0.1})
+    client_result = {}
+
+    def kill():
+        client_result["r"] = client.close_all(ExitReason.KILL_SWITCH, datetime.now(UTC))[0]
+        client_result["t"] = time.monotonic() - start
+
+    k = threading.Thread(target=kill)
+    k.start()
+    threading.Event().wait(0.1)  # la commande est en file avant le début du cycle
+    th.start()
+    k.join()
+    th.join()
+    assert client_result["r"].ok and not fake.positions
+    assert client_result["t"] < 2.0, f"kill servi en {client_result['t']:.1f} s"
