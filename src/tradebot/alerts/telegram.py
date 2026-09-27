@@ -31,19 +31,41 @@ log = get_logger(__name__)
 LEVELS = {"info": 1, "signal": 2, "critical": 3}
 
 
+class TelegramError(RuntimeError):
+    """Erreur Telegram dont le message ne contient JAMAIS le jeton du bot."""
+
+    def __init__(self, message: str, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
 class TelegramClient:
     def __init__(self, token: str, http: httpx.Client | None = None) -> None:
+        self._token = token
         self.base = f"https://api.telegram.org/bot{token}"
         self.http = http or httpx.Client(timeout=40)
 
+    def redact(self, text: str) -> str:
+        return text.replace(self._token, "***") if self._token else text
+
+    def _call(self, method: str, url: str, **kw: Any) -> httpx.Response:
+        # Les exceptions httpx contiennent l'URL, donc le jeton : on les réécrit masquées.
+        try:
+            r = self.http.request(method, url, **kw)
+            r.raise_for_status()
+            return r
+        except httpx.HTTPStatusError as e:
+            raise TelegramError(self.redact(str(e)), e.response.status_code) from None
+        except httpx.HTTPError as e:
+            raise TelegramError(self.redact(f"{type(e).__name__}: {e}")) from None
+
     def send_message(self, chat_id: int, text: str) -> None:
-        self.http.post(f"{self.base}/sendMessage",
-                       json={"chat_id": chat_id, "text": text[:4000], "disable_web_page_preview": True})
+        self._call("POST", f"{self.base}/sendMessage",
+                   json={"chat_id": chat_id, "text": text[:4000], "disable_web_page_preview": True})
 
     def get_updates(self, offset: int | None, timeout: int = 30) -> list[dict[str, Any]]:
-        r = self.http.get(f"{self.base}/getUpdates", params={"offset": offset, "timeout": timeout},
-                          timeout=timeout + 10)
-        r.raise_for_status()
+        r = self._call("GET", f"{self.base}/getUpdates", params={"offset": offset, "timeout": timeout},
+                       timeout=timeout + 10)
         return r.json().get("result", [])
 
 
@@ -66,7 +88,7 @@ class TelegramNotifier:
             try:
                 self.client.send_message(cid, text)
             except Exception as e:
-                log.error("telegram_send_failed", error=str(e))
+                log.error("telegram_send_failed", error=self.client.redact(str(e)))
         self._last = time.monotonic()
 
 
@@ -198,6 +220,14 @@ def run_bot(client: TelegramClient, handler: CommandHandler) -> None:  # pragma:
                 reply = handler.handle(int(chat), text)
                 if reply:
                     client.send_message(int(chat), reply)
+        except TelegramError as e:
+            if e.status_code == 409:
+                # Deux instances interrogent Telegram : normal quelques secondes pendant un
+                # redéploiement (l'ancienne instance n'est pas encore arrêtée).
+                log.warning("telegram_poll_conflict", detail="autre instance active (redéploiement ?)")
+            else:
+                log.error("telegram_poll_error", error=str(e))
+            time.sleep(5)
         except Exception as e:
-            log.error("telegram_poll_error", error=str(e))
+            log.error("telegram_poll_error", error=client.redact(str(e)))
             time.sleep(5)
