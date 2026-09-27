@@ -1,0 +1,68 @@
+# Cœur du système sur le VPS Linux.  Démarrage : docker compose up -d --build
+# AUCUN port n'est exposé publiquement : Postgres reste interne ; Redis et l'API
+# n'écoutent que sur l'IP Tailscale (TAILSCALE_IP dans .env) ou 127.0.0.1.
+
+x-app: &app
+  build: .
+  image: tradebot:latest
+  restart: unless-stopped
+  env_file: .env
+  environment:
+    DATABASE_URL: postgresql+psycopg://tradebot:${POSTGRES_PASSWORD}@postgres:5432/tradebot
+    REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+  volumes:
+    - ./var:/app/var
+    - ./data:/app/data
+    - ./reports:/app/reports
+    - ./config:/app/config:ro
+  depends_on:
+    postgres: { condition: service_healthy }
+    redis: { condition: service_healthy }
+  logging:
+    driver: json-file
+    options: { max-size: "20m", max-file: "5" }
+
+services:
+  postgres:
+    image: timescale/timescaledb:latest-pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tradebot
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD manquant}
+      POSTGRES_DB: tradebot
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tradebot"]
+      interval: 10s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD manquant}",
+              "--appendonly", "yes", "--protected-mode", "yes"]
+    # joignable par le pont Windows UNIQUEMENT via Tailscale
+    ports: ["${TAILSCALE_IP:-127.0.0.1}:6379:6379"]
+    volumes: [redisdata:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      retries: 10
+
+  live:
+    <<: *app
+    command: ["live"]
+
+  bot:
+    <<: *app
+    command: ["bot"]
+
+  api:
+    <<: *app
+    command: ["api", "--host", "0.0.0.0", "--port", "8000"]
+    # publié en local seulement ; `tailscale serve` le rend accessible en HTTPS sur ton tailnet
+    ports: ["127.0.0.1:8000:8000"]
+
+volumes:
+  pgdata:
+  redisdata:

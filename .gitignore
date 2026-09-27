@@ -1,0 +1,22 @@
+# Secrets — ne JAMAIS versionner
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Environnement
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+
+# Données et état (volumineux / propres à chaque machine)
+data/
+var/
+reports/
+*.db
+*.log

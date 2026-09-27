@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#111418">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg">
+<title>Tradebot</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --text: #15181d; --muted: #6b7380; --line: #e3e6ea;
+    --up: #0f7b4a; --down: #c0392b; --warn: #b7791f; --accent: #2f5bd3;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0f1216; --card: #171b21; --text: #e8ebef; --muted: #9098a4; --line: #262c34;
+            --up: #3fbf7f; --down: #ef6b5b; --warn: #e0a84a; --accent: #7a9cff; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+         padding: env(safe-area-inset-top) 16px calc(env(safe-area-inset-bottom) + 16px); }
+  header { display: flex; justify-content: space-between; align-items: center; padding: 14px 0 6px; }
+  h1 { font-size: 18px; margin: 0; }
+  .pill { font-size: 12px; padding: 3px 9px; border-radius: 99px; background: var(--line); color: var(--muted); }
+  .pill.ok { background: color-mix(in srgb, var(--up) 18%, transparent); color: var(--up); }
+  .pill.bad { background: color-mix(in srgb, var(--down) 18%, transparent); color: var(--down); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin: 12px 0; }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 8px; }
+  .big { font-size: 28px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; }
+  .k { color: var(--muted); font-size: 12px; } .v { font-variant-numeric: tabular-nums; }
+  .up { color: var(--up); } .down { color: var(--down); } .warn { color: var(--warn); }
+  .row { display: flex; justify-content: space-between; gap: 8px; padding: 7px 0; border-top: 1px solid var(--line); font-size: 14px; }
+  .row:first-child { border-top: 0; }
+  .btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  button { font: inherit; font-weight: 600; border: 0; border-radius: 12px; padding: 14px; min-height: 48px; cursor: pointer; }
+  .b-pause { background: var(--line); color: var(--text); }
+  .b-kill { background: var(--down); color: #fff; }
+  .b-resume { background: var(--accent); color: #fff; grid-column: span 2; }
+  svg { width: 100%; height: 90px; display: block; }
+  #login { display: none; }
+  input { font: inherit; width: 100%; padding: 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--card); color: var(--text); margin: 8px 0; }
+  .banner { border-radius: 12px; padding: 12px; margin: 12px 0; font-weight: 600; display: none; }
+  .banner.show { display: block; background: color-mix(in srgb, var(--down) 15%, transparent); color: var(--down); }
+  small { color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Tradebot · XAU/USD</h1>
+  <span id="health" class="pill">…</span>
+</header>
+
+<section id="login" class="card">
+  <h2>Connexion</h2>
+  <p><small>Jeton API (variable API_TOKEN du serveur). Stocké uniquement sur cet appareil.</small></p>
+  <input id="token" type="password" autocomplete="off" placeholder="Jeton API">
+  <button class="b-resume" style="width:100%" onclick="saveToken()">Enregistrer</button>
+</section>
+
+<main id="app">
+  <div id="banner" class="banner"></div>
+
+  <section class="card">
+    <h2>Compte</h2>
+    <div class="big" id="equity">—</div>
+    <div class="grid" style="margin-top:8px">
+      <div><div class="k">Solde</div><div class="v" id="balance">—</div></div>
+      <div><div class="k">P&L jour</div><div class="v" id="daypnl">—</div></div>
+      <div><div class="k">Drawdown (pic)</div><div class="v" id="dd">—</div></div>
+      <div><div class="k">Trades aujourd'hui</div><div class="v" id="ntoday">—</div></div>
+    </div>
+    <svg id="spark" viewBox="0 0 300 90" preserveAspectRatio="none" aria-label="Courbe d'equity"></svg>
+  </section>
+
+  <section class="card">
+    <h2>Positions</h2>
+    <div id="positions"><small>Aucune</small></div>
+  </section>
+
+  <section class="card">
+    <h2>Commandes</h2>
+    <div class="btns">
+      <button class="b-pause" onclick="cmd('pause')">⏸ Pause</button>
+      <button class="b-kill" onclick="cmd('kill')">🛑 Tout fermer</button>
+      <button class="b-resume" onclick="cmdTotp('resume')">▶️ Reprendre (TOTP)</button>
+    </div>
+    <p><small>Pause : plus de nouvelles entrées. Tout fermer : ferme les positions et met en pause.
+      En cas de doute, l'app MT5 du broker reste le dernier recours.</small></p>
+  </section>
+
+  <section class="card">
+    <h2>Système</h2>
+    <div id="system"></div>
+  </section>
+
+  <section class="card">
+    <h2>Derniers trades</h2>
+    <div id="trades"><small>Aucun</small></div>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let token = null;
+try { token = localStorage.getItem("tb_token"); } catch (e) {}
+
+function saveToken() {
+  token = $("token").value.trim();
+  try { localStorage.setItem("tb_token", token); } catch (e) {}
+  $("login").style.display = "none"; $("app").style.display = "block"; refresh();
+}
+
+async function api(path, opts = {}) {
+  const r = await fetch(path, { ...opts, headers: { "Authorization": "Bearer " + token,
+    "Content-Type": "application/json", ...(opts.headers || {}) } });
+  if (r.status === 401) { $("login").style.display = "block"; $("app").style.display = "none"; throw new Error("401"); }
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || r.status);
+  return r.json();
+}
+
+const fmt = (x, d = 2) => (x === null || x === undefined || isNaN(x)) ? "—" :
+  Number(x).toLocaleString("fr-CA", { minimumFractionDigits: d, maximumFractionDigits: d });
+const signed = (x) => (x >= 0 ? "+" : "") + fmt(x);
+
+function spark(points) {
+  const svg = $("spark");
+  if (!points.length) { svg.innerHTML = ""; return; }
+  const ys = points.map(p => p.equity), lo = Math.min(...ys), hi = Math.max(...ys), span = (hi - lo) || 1;
+  const d = ys.map((y, i) => `${i ? "L" : "M"}${(i / Math.max(ys.length - 1, 1) * 300).toFixed(1)},${(84 - (y - lo) / span * 78).toFixed(1)}`).join("");
+  const col = ys[ys.length - 1] >= ys[0] ? "var(--up)" : "var(--down)";
+  svg.innerHTML = `<path d="${d}" fill="none" stroke="${col}" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
+}
+
+async function refresh() {
+  if (!token) { $("login").style.display = "block"; $("app").style.display = "none"; return; }
+  try {
+    const st = await api("/api/status");
+    const h = $("health");
+    if (!st.available) { h.textContent = "moteur arrêté"; h.className = "pill bad"; }
+    else if (st.age_s > 120) { h.textContent = `muet ${Math.round(st.age_s)} s`; h.className = "pill bad"; }
+    else { h.textContent = `${st.mode} · ok`; h.className = "pill ok"; }
+
+    const a = st.account || {}, r = st.risk || {}, c = st.control || {};
+    $("equity").textContent = fmt(a.equity) + " " + (a.currency || "");
+    $("balance").textContent = fmt(a.balance);
+    const dp = a.equity - r.day_start_equity;
+    $("daypnl").innerHTML = `<span class="${dp >= 0 ? "up" : "down"}">${signed(dp)}</span>`;
+    const dd = r.peak_equity ? (r.peak_equity - a.equity) / r.peak_equity * 100 : 0;
+    $("dd").innerHTML = `<span class="${dd > 5 ? "warn" : ""}">${fmt(dd)} %</span>`;
+    $("ntoday").textContent = r.trades_today ?? "—";
+
+    const alerts = [];
+    if (r.halted) alerts.push("HALT drawdown : " + r.halt_reason);
+    if (r.day_locked) alerts.push("Limite journalière atteinte");
+    if (r.week_locked) alerts.push("Limite hebdomadaire atteinte");
+    if (c.paused) alerts.push("En pause : " + (c.reason || ""));
+    if (st.calendar && st.calendar.status !== "ok") alerts.push(st.calendar.status);
+    $("banner").textContent = alerts.join(" · "); $("banner").className = "banner" + (alerts.length ? " show" : "");
+
+    const pos = st.positions || [];
+    $("positions").innerHTML = pos.length ? pos.map(p =>
+      `<div class="row"><span><b>${p.side.toUpperCase()}</b> ${p.volume} @ ${fmt(p.entry_price)}</span>
+       <span>SL ${fmt(p.stop_loss)} · TP ${p.take_profit ? fmt(p.take_profit) : "—"}</span></div>`).join("") : "<small>Aucune</small>";
+
+    const cal = (st.calendar && st.calendar.upcoming) || [];
+    $("system").innerHTML = [
+      ["Stratégie", st.strategy], ["Dernière bougie", (st.last_bar_ts || "—").replace("T", " ").slice(0, 16)],
+      ["Pont MT5", st.bridge_alive === null ? "n/a" : (st.bridge_alive ? "ok" : "⚠️ injoignable")],
+      ["Signaux (acceptés/refusés)", st.stats ? `${st.stats.approved} / ${st.stats.rejected}` : "—"],
+      ["Prochaines annonces", cal.length ? cal.slice(0, 3).map(e => e.ts.slice(11, 16) + " " + e.title).join("<br>") : "aucune (24 h)"],
+    ].map(([k, v]) => `<div class="row"><span class="k">${k}</span><span>${v ?? "—"}</span></div>`).join("");
+
+    const [trades, eq] = await Promise.all([api("/api/trades?limit=10"), api("/api/equity?limit=1440")]);
+    $("trades").innerHTML = trades.length ? trades.map(t =>
+      `<div class="row"><span>${String(t.exit_ts).slice(5, 16).replace("T", " ")} ${t.side}</span>
+       <span class="${t.pnl >= 0 ? "up" : "down"}">${signed(t.pnl)} (${signed(t.r_multiple)} R)</span></div>`).join("") : "<small>Aucun</small>";
+    spark(eq);
+  } catch (e) { if (e.message !== "401") { $("health").textContent = "hors ligne"; $("health").className = "pill bad"; } }
+}
+
+async function cmd(name) {
+  const msg = name === "kill" ? "FERMER toutes les positions et mettre en pause ?" : "Mettre en pause (plus de nouvelles entrées) ?";
+  if (!confirm(msg)) return;
+  try { await api("/api/" + name, { method: "POST" }); alert("Commande envoyée."); refresh(); }
+  catch (e) { alert("Échec : " + e.message + "\nUtilise Telegram ou l'app MT5."); }
+}
+
+async function cmdTotp(name) {
+  const code = prompt("Code TOTP (6 chiffres) :");
+  if (!code) return;
+  try { await api("/api/" + name, { method: "POST", body: JSON.stringify({ code }) }); alert("OK"); refresh(); }
+  catch (e) { alert("Échec : " + e.message); }
+}
+
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+refresh();
+setInterval(refresh, 15000);
+</script>
+</body>
+</html>

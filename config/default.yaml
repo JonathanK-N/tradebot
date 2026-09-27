@@ -1,0 +1,68 @@
+# Configuration métier (versionnée). Les SECRETS vont dans .env, jamais ici.
+# Toute modification d'un paramètre de risque ou de stratégie = commit + note dans le journal.
+
+environment: dev
+
+account:
+  initial_balance: 10000   # capital de référence pour backtest / paper
+  currency: USD
+
+instrument:
+  symbol: XAUUSD
+  broker_symbol: XAUUSD    # à adapter : "GOLD", "XAUUSD.r", ... selon le broker
+  contract_size: 100       # onces par lot — VÉRIFIER dans MT5 (Spécification du symbole)
+  tick_size: 0.01
+  volume_min: 0.01
+  volume_step: 0.01
+  volume_max: 50
+  leverage: 20             # levier effectif du compte sur l'or (réglementation canadienne : faible)
+
+risk:
+  risk_per_trade_pct: 0.5      # 0.25 recommandé pendant la phase micro-lot réel
+  max_daily_loss_pct: 2.0      # atteint -> plus aucune entrée jusqu'à la prochaine journée (17:00 NY)
+  max_weekly_loss_pct: 4.0
+  max_drawdown_pct: 10.0       # atteint -> HALT permanent, reprise uniquement manuelle après revue
+  max_open_positions: 1
+  max_trades_per_day: 3
+  max_volume_lots: 1.0
+  max_margin_usage_pct: 30
+  max_spread_abs: 0.80
+  max_spread_median_mult: 2.5
+  min_reward_risk: 1.0
+  min_stop_distance: 0.50
+  sizing_slippage_buffer: 0.10
+  friday_cutoff_ny: "14:00:00"
+  rollover_before_min: 15
+  rollover_after_min: 30
+
+news:
+  enabled: true
+  currencies: [USD]
+  min_impact: high
+  default_before_min: 30
+  default_after_min: 30
+  max_calendar_age_hours: 36
+
+costs:
+  extra_spread: 0.05
+  commission_per_lot_side: 3.0
+  entry_slippage: 0.05
+  stop_slippage: 0.10
+  swap_long_per_lot: -50.0
+  swap_short_per_lot: -5.0
+  triple_swap_weekday: 2
+
+strategy:
+  name: asian_breakout
+  params: {}
+
+live:
+  mode: paper
+  poll_seconds: 5
+  reconcile_seconds: 30
+  heartbeat_timeout_seconds: 60
+  magic_number: 20260926
+  state_dir: var/state
+
+data_dir: data
+journal_url: sqlite:///var/journal.db

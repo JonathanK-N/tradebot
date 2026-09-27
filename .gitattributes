@@ -1,0 +1,4 @@
+# Fins de ligne LF partout (les scripts .sh cassent sur Linux avec CRLF)
+* text=auto eol=lf
+*.ps1 text eol=crlf
+*.png binary

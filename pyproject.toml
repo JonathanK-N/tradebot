@@ -1,0 +1,64 @@
+[project]
+name = "tradebot"
+version = "0.1.0"
+description = "Système de trading automatisé XAU/USD — monolithe modulaire, risque prioritaire, mobile-first."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "numpy>=2.0",
+    "pandas>=2.2",
+    "pyarrow>=17",
+    "pydantic>=2.8",
+    "pyyaml>=6.0",
+    "structlog>=24.4",
+    "httpx>=0.27",
+    "sqlalchemy>=2.0",
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "redis>=5.0",
+    "pyotp>=2.9",
+    "tzdata>=2024.1",
+]
+
+[project.optional-dependencies]
+# Uniquement sur le VPS Windows : le paquet MetaTrader5 n'existe que pour Windows.
+mt5 = ["MetaTrader5>=5.0.45; sys_platform == 'win32'"]
+crypto = ["ccxt>=4.3"]
+postgres = ["psycopg[binary]>=3.2"]
+
+[project.scripts]
+tradebot = "tradebot.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "hypothesis>=6.112",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "pandas-stubs>=2.2",
+    "types-PyYAML>=6.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tradebot"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+ignore = ["RUF001", "RUF002", "RUF003"]  # accents français dans les chaînes/commentaires
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+check_untyped_defs = true

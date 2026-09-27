@@ -1,0 +1,9 @@
+{
+  "name": "Tradebot XAU/USD",
+  "short_name": "Tradebot",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f1216",
+  "theme_color": "#111418",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

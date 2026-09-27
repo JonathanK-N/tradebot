@@ -1,0 +1,12 @@
+# Grilles de paramètres pour le walk-forward et l'analyse de sensibilité.
+# Règle anti-surapprentissage : grilles PETITES et GROSSIÈRES, fixées AVANT de voir
+# les résultats. Chaque ajout de valeur = plus de risque de « trouver » du bruit.
+
+asian_breakout:
+  reward_risk: [1.0, 1.5, 2.0]
+  buffer_atr: [0.05, 0.10, 0.20]
+  max_range_atr: [8.0, 12.0]
+
+trend_pullback:
+  stop_atr: [1.0, 1.5, 2.0]
+  reward_risk: [1.5, 2.0, 3.0]
