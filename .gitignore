@@ -14,10 +14,11 @@ __pycache__/
 .ruff_cache/
 .hypothesis/
 
-# Données et état (volumineux / propres à chaque machine)
-data/
-var/
-reports/
+# Données et état (volumineux / propres à chaque machine) — ancrés à la racine :
+# sans « / », « data/ » exclurait aussi le module de code src/tradebot/data/
+/data/
+/var/
+/reports/
 *.db
 *.log
 
