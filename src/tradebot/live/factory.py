@@ -147,7 +147,11 @@ def build_runner_with_retry(cfg: AppConfig, secrets: Secrets, *, sleep: Callable
             log.warning("live_waiting_for_broker", attempt=attempt, error=str(e))
             _publish_waiting(status, cfg, attempt, str(e))
             if attempt == 1:
-                notifier.send("critical", f"⏳ Moteur en attente du pont MT5 / broker : {e}")
+                notifier.send("critical", (
+                    "⏳ Moteur démarré, en attente du pont MT5.\n"
+                    "Normal tant que le VPS Windows avec MetaTrader 5 n'est pas installé : "
+                    "le moteur n'a encore ni prix ni broker, donc AUCUNE position ne peut être ouverte.\n"
+                    f"Détail technique : {e}"))
             if max_attempts is not None and attempt >= max_attempts:
                 raise
             sleep(cfg.live.bridge_wait_seconds)

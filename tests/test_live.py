@@ -128,3 +128,14 @@ def test_sql_journal(tmp_path):
     assert j.recent_trades()[0]["r_multiple"] == pytest.approx(99 / 50)
     assert len(j.equity_curve()) == 1
     assert j.recent_events(kind="trade")[0]["payload"]["pnl"] == 99
+
+
+def test_dashboard_command(tmp_path):
+    h = CommandHandler(ControlFile(tmp_path / "c.json"), StatusFile(tmp_path / "s.json"), [7], None,
+                       dashboard_url="https://api-exemple.up.railway.app")
+    for cmd in ("/dashboard", "/start"):
+        reply = h.handle(7, cmd)
+        assert "https://api-exemple.up.railway.app" in reply and "écran d'accueil" in reply
+    assert "non configurée" in CommandHandler(ControlFile(tmp_path / "c.json"), StatusFile(tmp_path / "s.json"),
+                                              [7], None).handle(7, "/dashboard")
+    assert h.handle(8, "/dashboard") is None  # inconnu : ignoré

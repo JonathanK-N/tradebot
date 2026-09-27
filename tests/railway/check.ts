@@ -101,6 +101,8 @@ test("moindre privilège : chaque service ne reçoit que ses secrets", async () 
   const { services } = await load();
   const keys = (n: string) => Object.keys(services.get(n)!.variables ?? {});
   assert.ok(!keys("api").includes("TELEGRAM_BOT_TOKEN"));
+  const dash = services.get("bot")!.variables!.DASHBOARD_URL;
+  assert.equal(dash?.type, "reference", "le bot doit recevoir le domaine public de l'api");
   assert.ok(!keys("bot").includes("API_TOKEN"));
   assert.ok(!keys("live").includes("API_TOKEN"));
   assert.ok(!keys("live").includes("TOTP_SECRET"));

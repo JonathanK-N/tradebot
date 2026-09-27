@@ -68,6 +68,8 @@ export default defineRailway((ctx) => {
       TELEGRAM_BOT_TOKEN: ctx.shared.TELEGRAM_BOT_TOKEN,
       TELEGRAM_ALLOWED_CHAT_IDS: ctx.shared.TELEGRAM_ALLOWED_CHAT_IDS,
       TOTP_SECRET: ctx.shared.TOTP_SECRET,
+      // lien envoyé par /dashboard et /start (domaine public généré pour le service api)
+      DASHBOARD_URL: api.env.RAILWAY_PUBLIC_DOMAIN,
     },
   });
 

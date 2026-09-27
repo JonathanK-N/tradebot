@@ -82,12 +82,22 @@ def _fmt_positions(positions: list[dict]) -> str:
 class CommandHandler:
     def __init__(self, control: ControlStore, status: StatusStore, allowed_ids: list[int],
                  totp_secret: str | None, *,
-                 trades_provider: Callable[[int], list[dict]] | None = None) -> None:
+                 trades_provider: Callable[[int], list[dict]] | None = None,
+                 dashboard_url: str | None = None) -> None:
         self.control = control
         self.status = status
         self.allowed = set(allowed_ids)
         self.totp = pyotp.TOTP(totp_secret) if totp_secret else None
         self.trades_provider = trades_provider
+        self.dashboard_url = dashboard_url
+
+    def _dashboard_help(self) -> str:
+        if not self.dashboard_url:
+            return "Dashboard : adresse non configurée (variable DASHBOARD_URL)."
+        return (f"📱 Dashboard : {self.dashboard_url}\n"
+                "iPhone : ouvre le lien dans Safari → bouton Partager → « Sur l'écran d'accueil ».\n"
+                "Android : ouvre-le dans Chrome → menu ⋮ → « Installer l'application ».\n"
+                "Au premier lancement, colle ton API_TOKEN.")
 
     def _check_totp(self, args: list[str]) -> bool:
         return bool(self.totp and args and self.totp.verify(args[0], valid_window=1))
@@ -113,8 +123,12 @@ class CommandHandler:
         if cmd in ("/start", "/help"):
             return ("Commandes :\n/status — état du système\n/positions — positions ouvertes\n"
                     "/trades — derniers trades\n/news — annonces à venir\n"
+                    "/dashboard — lien du tableau de bord (PWA)\n"
                     "/pause — stoppe les nouvelles entrées\n/kill — ferme TOUT et stoppe\n"
-                    "/resume <code TOTP> — reprise\n/reset_halt <code TOTP> — lever le HALT drawdown")
+                    "/resume <code TOTP> — reprise\n/reset_halt <code TOTP> — lever le HALT drawdown\n\n"
+                    + self._dashboard_help())
+        if cmd == "/dashboard":
+            return self._dashboard_help()
         if cmd == "/pause":
             self.control.pause("pause via Telegram", who)
             return "⏸ Pause activée : plus aucune nouvelle entrée. Positions conservées avec leurs SL/TP."

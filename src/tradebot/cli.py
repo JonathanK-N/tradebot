@@ -209,8 +209,11 @@ def cmd_bot(a, cfg: AppConfig, secrets: Secrets) -> None:
         raise SystemExit("TELEGRAM_BOT_TOKEN et TELEGRAM_ALLOWED_CHAT_IDS requis")
     journal = SqlJournal(secrets.database_url or cfg.journal_url)
     control, status = state_stores(cfg, secrets)
+    dashboard = os.environ.get("DASHBOARD_URL", "").strip() or None
+    if dashboard and not dashboard.startswith("http"):
+        dashboard = f"https://{dashboard}"  # Railway fournit le domaine sans schéma
     handler = CommandHandler(control, status, secrets.telegram_allowed_chat_ids, secrets.totp_secret,
-                             trades_provider=journal.recent_trades)
+                             trades_provider=journal.recent_trades, dashboard_url=dashboard)
     run_bot(TelegramClient(secrets.telegram_bot_token), handler)
 
 
