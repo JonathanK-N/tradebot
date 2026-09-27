@@ -275,3 +275,21 @@ def test_api_refuses_to_start_without_token(tmp_path):
     r = subprocess.run([sys.executable, "-m", "tradebot.cli", "api"], env=env, cwd=ROOT,
                        capture_output=True, text=True, timeout=60)
     assert r.returncode != 0 and "API_TOKEN" in (r.stdout + r.stderr)
+
+
+def test_waiting_state_is_published(fake_kv):
+    status = StatusStore(fake_kv)
+    attempts = []
+
+    def builder(cfg, secrets):
+        attempts.append(1)
+        if len(attempts) < 3:
+            raise ConnectionError("historique non publié : le pont MT5 tourne-t-il ?")
+        return "runner"
+
+    seen = []
+    build_runner_with_retry(AppConfig(), Secrets(), sleep=lambda s: seen.append(status.read()),
+                            builder=builder, status=status)
+    assert seen[0]["state"] == "waiting_for_bridge" and seen[-1]["waiting"]["attempt"] == 2
+    h = CommandHandler(ControlStore(fake_kv), status, [1], None)
+    assert "EN ATTENTE du pont MT5" in h.handle(1, "/status")

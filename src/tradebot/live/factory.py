@@ -120,7 +120,8 @@ def build_runner(cfg: AppConfig, secrets: Secrets, warmup_bars: int = 20_000) ->
 
 
 def build_runner_with_retry(cfg: AppConfig, secrets: Secrets, *, sleep: Callable[[float], None] = time.sleep,
-                            max_attempts: int | None = None, builder=build_runner) -> LiveRunner:
+                            max_attempts: int | None = None, builder=build_runner,
+                            status: StatusStore | None = None) -> LiveRunner:
     """Attend le pont MT5 / le terminal au lieu de planter.
 
     Sur Railway, un service qui s'arrête en erreur n'est redémarré que 10 fois : si le
@@ -128,6 +129,11 @@ def build_runner_with_retry(cfg: AppConfig, secrets: Secrets, *, sleep: Callable
     Les erreurs de configuration (verrou compte réel, secrets manquants) restent fatales.
     """
     notifier = build_notifier(secrets)
+    if status is None:
+        try:
+            status = state_stores(cfg, secrets)[1]
+        except RuntimeError:
+            status = None
     attempt = 0
     while True:
         attempt += 1
@@ -139,8 +145,21 @@ def build_runner_with_retry(cfg: AppConfig, secrets: Secrets, *, sleep: Callable
             if isinstance(e, RuntimeError) and "requis" in str(e):
                 raise  # secret manquant : inutile de réessayer
             log.warning("live_waiting_for_broker", attempt=attempt, error=str(e))
+            _publish_waiting(status, cfg, attempt, str(e))
             if attempt == 1:
                 notifier.send("critical", f"⏳ Moteur en attente du pont MT5 / broker : {e}")
             if max_attempts is not None and attempt >= max_attempts:
                 raise
             sleep(cfg.live.bridge_wait_seconds)
+
+
+def _publish_waiting(status: StatusStore | None, cfg: AppConfig, attempt: int, error: str) -> None:
+    """Le dashboard et /status affichent « en attente du pont » au lieu de « moteur arrêté »."""
+    if status is None:
+        return
+    try:
+        status.write({"mode": cfg.live.mode, "strategy": cfg.strategy.name, "state": "waiting_for_bridge",
+                      "waiting": {"attempt": attempt, "reason": error}, "positions": [], "account": {},
+                      "risk": {}, "control": {}, "calendar": {"status": "inactif (moteur en attente)"}})
+    except Exception as ex:  # l'état est informatif : ne jamais bloquer l'attente pour lui
+        log.warning("status_publish_failed", error=str(ex))

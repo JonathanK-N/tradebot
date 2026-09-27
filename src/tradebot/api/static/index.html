@@ -140,6 +140,7 @@ async function refresh() {
     const h = $("health");
     if (!st.available) { h.textContent = "moteur arrêté"; h.className = "pill bad"; }
     else if (st.age_s > 120) { h.textContent = `muet ${Math.round(st.age_s)} s`; h.className = "pill bad"; }
+    else if (st.state === "waiting_for_bridge") { h.textContent = "attente pont MT5"; h.className = "pill"; }
     else { h.textContent = `${st.mode} · ok`; h.className = "pill ok"; }
 
     const a = st.account || {}, r = st.risk || {}, c = st.control || {};

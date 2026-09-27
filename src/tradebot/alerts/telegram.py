@@ -139,6 +139,10 @@ class CommandHandler:
             return "⚠️ Aucun état publié : le moteur live ne tourne pas ?"
         stale = st["age_s"] > 120
         head = f"⚠️ État vieux de {st['age_s']:.0f} s — moteur bloqué ?\n" if stale else ""
+        if st.get("state") == "waiting_for_bridge":
+            w = st.get("waiting", {})
+            return head + (f"⏳ Moteur démarré, EN ATTENTE du pont MT5 (tentative {w.get('attempt')}).\n"
+                           f"Raison : {w.get('reason')}\nAucune position ne peut être ouverte.")
         if cmd == "/status":
             a, r, c = st.get("account", {}), st.get("risk", {}), st.get("control", {})
             return head + (
