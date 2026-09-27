@@ -32,6 +32,11 @@ def configure_logging(level: str = "INFO", json: bool = True) -> None:
 
         handlers.append(RotatingFileHandler(path, maxBytes=20_000_000, backupCount=5, encoding="utf-8"))
     logging.basicConfig(format="%(message)s", handlers=handlers, level=level.upper(), force=True)
+    # SÉCURITÉ : httpx journalise l'URL complète de chaque requête au niveau INFO, or l'API
+    # Telegram place le jeton du bot DANS l'URL (/bot<jeton>/...). Sans cette ligne, le jeton
+    # se retrouve en clair dans les logs (incident réel sur Railway).
+    for noisy in ("httpx", "httpcore"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
     renderer = (
         structlog.processors.JSONRenderer()
         if json
