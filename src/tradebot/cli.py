@@ -239,6 +239,16 @@ def cmd_api(a, cfg: AppConfig, secrets: Secrets) -> None:
                 forwarded_allow_ips="*")
 
 
+def cmd_mt5_check(a, cfg: AppConfig, secrets: Secrets) -> None:
+    from tradebot.execution.mt5_adapter import import_mt5
+    from tradebot.execution.mt5_check import check_mt5
+
+    report = check_mt5(import_mt5(), secrets.mt5_path)
+    print(report.to_text())
+    if not report.ok:
+        raise SystemExit(1)
+
+
 def cmd_totp_setup(a, cfg: AppConfig) -> None:
     import pyotp
 
@@ -318,6 +328,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp = add("api", cmd_api, "API + dashboard PWA", True)
     sp.add_argument("--host", default="127.0.0.1")
     sp.add_argument("--port", type=int, default=None, help="défaut : $PORT sinon 8000")
+    add("mt5-check", cmd_mt5_check, "diagnostic du terminal MT5 (compte démo, symbole or)", True)
     add("totp-setup", cmd_totp_setup, "générer un secret TOTP")
     add("config-check", cmd_config_check, "afficher la config effective et les secrets présents")
     return p
